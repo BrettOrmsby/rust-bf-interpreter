@@ -5,8 +5,8 @@ fn main() {
     enum BFToken {
         Increment,
         Decrement,
-        LoopOpen,
-        LoopClose,
+        LoopOpen(usize),
+        LoopClose(usize),
         Input,
         Output,
         Next,
@@ -14,24 +14,27 @@ fn main() {
     }
 
     struct BF {
-        code: String,
+        code: Vec<char>,
+        input: Vec<char>,
     }
 
     impl BF {
-        fn new(code: String) -> BF {
-            BF { code: code }
+        fn new(code: &str, input: &str) -> BF {
+            let code = code.chars().collect();
+            let input = input.chars().collect();
+            BF { code, input }
         }
 
         fn tokenize(&self) -> Vec<BFToken> {
             let mut tokens: Vec<BFToken> = vec![];
-            for c in self.code.chars() {
+            for (index, c) in self.code.iter().enumerate() {
                 match c {
                     '.' => tokens.push(BFToken::Output),
                     ',' => tokens.push(BFToken::Input),
                     '+' => tokens.push(BFToken::Increment),
                     '-' => tokens.push(BFToken::Decrement),
-                    '[' => tokens.push(BFToken::LoopOpen),
-                    ']' => tokens.push(BFToken::LoopClose),
+                    '[' => tokens.push(BFToken::LoopOpen(index + 1)),
+                    ']' => tokens.push(BFToken::LoopClose(index + 1)),
                     '>' => tokens.push(BFToken::Next),
                     '<' => tokens.push(BFToken::Prev),
                     _ => (),
@@ -40,12 +43,14 @@ fn main() {
             tokens
         }
 
-        fn run(&self) {
+        fn run(&self) -> String {
             let tokens = self.tokenize();
             let mut pointer: usize = 0;
+            let mut input_count: usize = 0;
             let mut memory: Vec<u8> = vec![0];
             let mut code_pos: usize = 0;
             let mut loop_entries: Vec<usize> = vec![];
+            let mut output = String::from("");
 
             while code_pos < tokens.len() {
                 match tokens[code_pos] {
@@ -75,24 +80,33 @@ fn main() {
                         }
                     }
                     BFToken::Input => {
-                        let input: Option<u8> = std::io::stdin()
-                            .bytes()
-                            .next()
-                            .and_then(|result| result.ok())
-                            .map(|byte| byte as u8);
-                        memory[pointer] = input.unwrap_or(0);
+                        let input: u8;
+                        if input_count < self.input.len() {
+                            input = self.input[input_count] as u8;
+                            input_count += 1;
+                        } else {
+                            input = std::io::stdin()
+                                .bytes()
+                                .next()
+                                .and_then(|result| result.ok())
+                                .map(|byte| byte as u8)
+                                .unwrap_or(0);
+                        }
+                        memory[pointer] = input
                     }
                     BFToken::Output => {
-                        print!("{}", memory[pointer] as char);
+                        let c = memory[pointer] as char;
+                        output.push(c);
+                        print!("{c}");
                     }
-                    BFToken::LoopOpen => {
+                    BFToken::LoopOpen(index) => {
                         if memory[pointer] == 0 {
                             let mut num_opens: u32 = 1;
                             while code_pos < tokens.len() - 1 {
                                 code_pos += 1;
                                 match tokens[code_pos] {
-                                    BFToken::LoopOpen => num_opens += 1,
-                                    BFToken::LoopClose => {
+                                    BFToken::LoopOpen(_) => num_opens += 1,
+                                    BFToken::LoopClose(_) => {
                                         num_opens -= 1;
                                         if num_opens == 0 {
                                             break;
@@ -102,19 +116,22 @@ fn main() {
                                 }
                             }
                             if num_opens != 0 {
-                                eprintln!("Loops (`[]`) must come in groups of 2.");
+                                eprintln!(
+                                    "Error: char {index}, loops `[]` must come in groups of 2."
+                                );
                                 process::exit(1);
                             }
                         } else {
                             loop_entries.push(code_pos - 1);
                         }
                     }
-                    BFToken::LoopClose => {
+                    BFToken::LoopClose(index) => {
+                        if loop_entries.len() < 1 {
+                            eprintln!("Error: char {index}, loops `[]` must come in groups of 2.");
+                            process::exit(1);
+                        }
                         if memory[pointer] != 0 {
-                            code_pos = loop_entries.pop().unwrap_or_else(|| {
-                                eprintln!("Loops (`[]`) must come in groups of 2.");
-                                process::exit(1);
-                            });
+                            code_pos = loop_entries.pop().unwrap();
                         } else {
                             loop_entries.pop();
                         }
@@ -122,14 +139,21 @@ fn main() {
                 }
                 code_pos += 1;
             }
+            output
         }
     }
 
-    // hello world
-    BF::new(">+++++++++[<++++++++>-]<.>+++++++[<++++>-]<+.+++++++..+++.[-]>++++++++[<++++>-] <.>+++++++++++[<++++++++>-]<-.--------.+++.------.--------.[-]>++++++++[<++++>- ]<+.[-]++++++++++.".to_string()).run();
-    // hello world
-    BF::new("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.".to_string()).run();
-    // fibinachi
-    //BF::new(">++++++++++>+>+[[+++++[>++++++++<-]>.<++++++[>--------<-]+<<<]>.>>[[-]<[>+<-]>>[<<+>+>-]<[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>[-]>+>+<<<-[>+<-]]]]]]]]]]]+>>>]<<<]".to_string()).run();
-    //BF::new("".to_string()).run();
+    let hello_world1 = ">+++++++++[<++++++++>-]<.>+++++++[<++++>-]<+.+++++++..+++.[-]>++++++++[<++++>-] <.>+++++++++++[<++++++++>-]<-.--------.+++.------.--------.[-]>++++++++[<++++>- ]<+.[-]++++++++++.";
+    let hello_world2 = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
+    let _fibonacci = ">++++++++++>+>+[[+++++[>++++++++<-]>.<++++++[>--------<-]+<<<]>.>>[[-]<[>+<-]>>[<<+>+>-]<[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>[-]>+>+<<<-[>+<-]]]]]]]]]]]+>>>]<<<]";
+
+    assert_eq!(
+        BF::new(hello_world1, "").run(),
+        "Hello world!\n".to_string()
+    );
+    assert_eq!(
+        BF::new(hello_world2, "").run(),
+        "Hello World!\n".to_string()
+    );
+    assert_eq!(BF::new(",>,>,.<.<.", "abc").run(), "cba".to_string());
 }
