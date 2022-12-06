@@ -1,4 +1,4 @@
-# A Brain F\*uck Interpreter
+# A Brain F\*ck Interpreter
 
 This is just a simple BF interpreter written as my first project in rust.
 
